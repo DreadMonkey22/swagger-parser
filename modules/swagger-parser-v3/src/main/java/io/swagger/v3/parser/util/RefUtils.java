@@ -6,8 +6,7 @@ import io.swagger.v3.parser.processors.ExternalRefProcessor;
 import org.apache.commons.io.IOUtils;
 import org.apache.commons.lang3.StringUtils;
 
-import static java.nio.charset.StandardCharsets.UTF_8;
-
+import java.io.File;
 import java.io.FileInputStream;
 import java.io.IOException;
 import java.io.InputStream;
@@ -15,6 +14,8 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Optional;
+
+import static java.nio.charset.StandardCharsets.UTF_8;
 
 public class RefUtils {
 
@@ -57,9 +58,9 @@ public class RefUtils {
             return Optional.empty();
         }
         return Optional.of(ref.split(REFERENCE_SEPARATOR))
-            .filter(it -> it.length == 2)
-            .map(it -> it[0])
-            .filter(it -> !it.isEmpty());
+                .filter(it -> it.length == 2)
+                .map(it -> it[0])
+                .filter(it -> !it.isEmpty());
     }
 
     public static boolean isAnExternalRefFormat(RefFormat refFormat) {
@@ -69,11 +70,11 @@ public class RefUtils {
     public static RefFormat computeRefFormat(String ref) {
         RefFormat result = RefFormat.INTERNAL;
         ref = mungedRef(ref);
-        if(ref.startsWith("http")||ref.startsWith("https")) {
+        if (ref.startsWith("http") || ref.startsWith("https")) {
             result = RefFormat.URL;
-        } else if(ref.startsWith(REFERENCE_SEPARATOR)) {
+        } else if (ref.startsWith(REFERENCE_SEPARATOR)) {
             result = RefFormat.INTERNAL;
-        } else if(ref.startsWith(".") || ref.startsWith("/") || ref.indexOf(REFERENCE_SEPARATOR) > 0) {
+        } else if (ref.startsWith(".") || ref.startsWith("/") || ref.indexOf(REFERENCE_SEPARATOR) > 0) {
             result = RefFormat.RELATIVE;
         }
 
@@ -147,39 +148,39 @@ public class RefUtils {
 
     public static String buildUrl(String rootPath, String relativePath) {
         String[] rootPathParts = rootPath.split("/");
-        String [] relPathParts = relativePath.split("/");
+        String[] relPathParts = relativePath.split("/");
 
-        if(rootPath == null || relativePath == null) {
+        if (rootPath == null || relativePath == null) {
             return null;
         }
 
         int trimRoot = 0;
         int trimRel = 0;
 
-        if(!"".equals(rootPathParts[rootPathParts.length - 1])) {
+        if (!"".equals(rootPathParts[rootPathParts.length - 1])) {
             trimRoot = 1;
         }
-        if("".equals(relPathParts[0])) {
-            trimRel = 1; trimRoot = rootPathParts.length-3;
-        }        
-        for(int i = 0; i < rootPathParts.length; i++) {
-            if("".equals(rootPathParts[i])) {
+        if ("".equals(relPathParts[0])) {
+            trimRel = 1;
+            trimRoot = rootPathParts.length - 3;
+        }
+        for (int i = 0; i < rootPathParts.length; i++) {
+            if ("".equals(rootPathParts[i])) {
                 trimRel += 1;
-            }
-            else {
+            } else {
                 break;
             }
         }
-        for(int i = 0; i < relPathParts.length; i ++) {
-            if(".".equals(relPathParts[i])) {
+        for (int i = 0; i < relPathParts.length; i++) {
+            if (".".equals(relPathParts[i])) {
                 trimRel += 1;
-            }
-            else if ("..".equals(relPathParts[i])) {
-                trimRel += 1; trimRoot += 1;
+            } else if ("..".equals(relPathParts[i])) {
+                trimRel += 1;
+                trimRoot += 1;
             }
         }
 
-        String [] outputParts = new String[rootPathParts.length + relPathParts.length - trimRoot - trimRel];
+        String[] outputParts = new String[rootPathParts.length + relPathParts.length - trimRoot - trimRel];
         System.arraycopy(rootPathParts, 0, outputParts, 0, rootPathParts.length - trimRoot);
         System.arraycopy(relPathParts,
                 trimRel,
@@ -203,10 +204,22 @@ public class RefUtils {
             if (refFormat == RefFormat.URL) {
                 result = RemoteUrl.urlToString(file, auths);
             } else {
+                //need to handle relative references inside nested files
+                if (file.startsWith("../") || file.startsWith("./")) {
+
+                    String[] fileParts = file.split("#/");
+                    String fileNameOnly = fileParts[0].substring(fileParts[0].lastIndexOf("/") + 1);
+                    Finder finder = new Finder(fileNameOnly);
+                    Files.walkFileTree(parentDirectory, finder);
+                    Path foundPath = finder.getResult();
+                    Path relativePathToParentDirectory = parentDirectory.relativize(foundPath);
+                    file = "./" + relativePathToParentDirectory.toString().replace(File.separator, "/");
+
+                }
                 //its assumed to be a relative file ref
                 final Path pathToUse = parentDirectory.resolve(file).normalize();
 
-                if(Files.exists(pathToUse)) {
+                if (Files.exists(pathToUse)) {
                     result = readAll(pathToUse);
                 } else {
                     String url = file;
@@ -225,18 +238,18 @@ public class RefUtils {
                     }
                     final Path pathToUse2 = parentDirectory.resolve(url).normalize();
 
-                    if(Files.exists(pathToUse2)) {
+                    if (Files.exists(pathToUse2)) {
                         result = readAll(pathToUse2);
                     }
                 }
-                if (result == null){
+                if (result == null) {
                     result = ClasspathHelper.loadFileFromClasspath(file);
                 }
 
 
             }
         } catch (Exception e) {
-            throw new RuntimeException("Unable to load " + refFormat + " ref: " + file + " path: "+parentDirectory, e);
+            throw new RuntimeException("Unable to load " + refFormat + " ref: " + file + " path: " + parentDirectory, e);
         }
 
         return result;
